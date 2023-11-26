@@ -55,7 +55,7 @@ struct image {
 
 
 // This module follows "design-by-contract" principles.
-// Read `Design-by-Contract.md` for more details.
+// Read Design-by-Contract.md for more details.
 
 /// Error handling functions
 
@@ -145,14 +145,17 @@ static int check(int condition, const char* failmsg) {
 /// Currently, simply calibrate instrumentation and set names of counters.
 void ImageInit(void) { ///
   InstrCalibrate();
-  InstrName[0] = "pixmem";  // InstrCount[0] will count pixel array acesses
+  InstrName[0] = "pixmem"; // InstrCount[0] will count pixel array acesses
   // Name other counters here...
-  
+  InstrName[1] = "compare";
+  InstrName[2] = "give";
 }
 
 // Macros to simplify accessing instrumentation counters:
 #define PIXMEM InstrCount[0]
 // Add more macros here...
+#define PIXCOMPARE InstrCount[1]
+#define PIXCOMPARE InstrCount[2]
 
 // TIP: Search for PIXMEM or InstrCount to see where it is incremented!
 
@@ -172,6 +175,16 @@ Image ImageCreate(int width, int height, uint8 maxval) { ///
   assert (height >= 0);
   assert (0 < maxval && maxval <= PixMax);
   // Insert your code here!
+  Image img = (Image) malloc(sizeof(img));
+  if (img == NULL){
+    free(img);
+    return NULL;
+  } 
+  img->width = width;
+  img->height = height;
+  img->maxval = maxval;
+  img->pixel = (uint8*)malloc(sizeof(uint8)*width*height);
+  return img;
 }
 
 /// Destroy the image pointed to by (*imgp).
@@ -182,6 +195,9 @@ Image ImageCreate(int width, int height, uint8 maxval) { ///
 void ImageDestroy(Image* imgp) { ///
   assert (imgp != NULL);
   // Insert your code here!
+  free(*(&(*imgp)->pixel));
+  free(*imgp);
+  *imgp = NULL;
 }
 
 
@@ -294,6 +310,20 @@ int ImageMaxval(Image img) { ///
 void ImageStats(Image img, uint8* min, uint8* max) { ///
   assert (img != NULL);
   // Insert your code here!
+  int maxpixel = ImageGetPixel(img, 0, 0);
+  int minpixel = ImageGetPixel(img, 0, 0);
+  for(int y=0;y<img->height;y++){
+    for(int x=0; x<img->width; x++){
+      if (maxpixel < ImageGetPixel(img, x, y)){
+        maxpixel = ImageGetPixel(img, x, y);
+      }
+      if (minpixel > ImageGetPixel(img, x, y)){
+        minpixel = ImageGetPixel(img,x,y);
+      }
+    }
+  }
+  *max = maxpixel;
+  *min = minpixel;
 }
 
 /// Check if pixel position (x,y) is inside img.
@@ -305,7 +335,12 @@ int ImageValidPos(Image img, int x, int y) { ///
 /// Check if rectangular area (x,y,w,h) is completely inside img.
 int ImageValidRect(Image img, int x, int y, int w, int h) { ///
   assert (img != NULL);
+  assert (w>=0 && h>=0);
   // Insert your code here!
+  if (img->width>=w+x && img->height>=y+h){
+    return 1;
+  }
+  return 0;
 }
 
 /// Pixel get & set operations
@@ -321,6 +356,7 @@ int ImageValidRect(Image img, int x, int y, int w, int h) { ///
 static inline int G(Image img, int x, int y) {
   int index;
   // Insert your code here!
+  index = y * img->width + x;
   assert (0 <= index && index < img->width*img->height);
   return index;
 }
@@ -356,6 +392,12 @@ void ImageSetPixel(Image img, int x, int y, uint8 level) { ///
 void ImageNegative(Image img) { ///
   assert (img != NULL);
   // Insert your code here!
+  for (int x=0;x<img->width;x++){
+    for (int y=0;y<img->height;y++){
+      uint8 pix = img->maxval-ImageGetPixel(img, x, y);
+      ImageSetPixel(img, x, y, pix);
+    }
+  }
 }
 
 /// Apply threshold to image.
@@ -364,6 +406,15 @@ void ImageNegative(Image img) { ///
 void ImageThreshold(Image img, uint8 thr) { ///
   assert (img != NULL);
   // Insert your code here!
+  for (int x=0;x<img->width;x++){
+    for (int y=0;y<img->height;y++){
+      if (ImageGetPixel(img,x,y)<thr){
+        ImageSetPixel(img,x,y,0);
+      }else{
+        ImageSetPixel(img,x,y,img->maxval);
+      }
+    }
+  }
 }
 
 /// Brighten image by a factor.
@@ -372,8 +423,19 @@ void ImageThreshold(Image img, uint8 thr) { ///
 /// darken the image if factor<1.0.
 void ImageBrighten(Image img, double factor) { ///
   assert (img != NULL);
-  // ? assert (factor >= 0.0);
+  assert (factor >= 0.0);
   // Insert your code here!
+  for (int x=0;x<img->width;x++){
+    for (int y=0;y<img->height;y++){
+      uint8 factorizado = ImageGetPixel(img,x,y)*factor+0.5;
+      if (factorizado>img->maxval){
+        ImageSetPixel(img,x,y,img->maxval);
+      }else{
+        ImageSetPixel(img,x,y,factorizado);
+      }
+   }
+  }
+  
 }
 
 
@@ -399,21 +461,35 @@ void ImageBrighten(Image img, double factor) { ///
 /// (The caller is responsible for destroying the returned image!)
 /// On failure, returns NULL and errno/errCause are set accordingly.
 Image ImageRotate(Image img) { ///
-  assert (img != NULL);
+  assert (img != NULL);\
   // Insert your code here!
+  Image imgRot = ImageCreate(img->width,img->height,img->maxval);
+  for (int x = 0; x < img->width; x++) {
+    for (int y = 0;  y< img->height; y++) {
+        ImageSetPixel(imgRot,y,img->width-x-1,ImageGetPixel(img,x,y));
+    }
+  }
+  return imgRot;
 }
-
 /// Mirror an image = flip left-right.
 /// Returns a mirrored version of the image.
 /// Ensures: The original img is not modified.
-/// 
+///                                                                                           
 /// On success, a new image is returned.
 /// (The caller is responsible for destroying the returned image!)
 /// On failure, returns NULL and errno/errCause are set accordingly.
 Image ImageMirror(Image img) { ///
   assert (img != NULL);
   // Insert your code here!
+  Image imgMir = ImageCreate(img->width,img->height,img->maxval);
+  for (int y = 0;  y< img->height; y++) {
+    for (int x = 0; x< img->width; x++) {
+      ImageSetPixel(imgMir,x,y,ImageGetPixel(img,img->width-x-1,y)); 
+    }
+  }
+  return imgMir;
 }
+
 
 /// Crop a rectangular subimage from img.
 /// The rectangle is specified by the top left corner coords (x, y) and
@@ -431,6 +507,13 @@ Image ImageCrop(Image img, int x, int y, int w, int h) { ///
   assert (img != NULL);
   assert (ImageValidRect(img, x, y, w, h));
   // Insert your code here!
+  Image imgCrop = ImageCreate(w,h,img->maxval);
+   for (int i = 0;  i< w; i++) {
+    for (int j = 0; j< h; j++) {
+      ImageSetPixel(imgCrop,i,j,ImageGetPixel(img,x+i,y+j)); 
+    }
+  }
+  return imgCrop;
 }
 
 
@@ -445,6 +528,11 @@ void ImagePaste(Image img1, int x, int y, Image img2) { ///
   assert (img2 != NULL);
   assert (ImageValidRect(img1, x, y, img2->width, img2->height));
   // Insert your code here!
+  for(int i = 0;i<img2->width;i++){
+    for(int j=0;j<img2->height;j++){
+      ImageSetPixel(img1,x+i,y+j,ImageGetPixel(img2,i,j));
+    }
+  }
 }
 
 /// Blend an image into a larger image.
@@ -458,7 +546,19 @@ void ImageBlend(Image img1, int x, int y, Image img2, double alpha) { ///
   assert (img2 != NULL);
   assert (ImageValidRect(img1, x, y, img2->width, img2->height));
   // Insert your code here!
+  // Blend the images
+  for (int i = 0; i < img2->width; i++) {
+    for (int j = 0; j < img2->height; j++) {
+      uint8 blendVal = ImageGetPixel(img1,x+i,y+j)*(1-alpha) + alpha * ImageGetPixel(img2,i,j) + 0.5;
+      if (blendVal<=img1->maxval){
+        ImageSetPixel(img1,x+i,y+j,blendVal);
+      }else{
+        ImageSetPixel(img1,x+i,y+j,img1->maxval);
+      }
+    }
+  }
 }
+
 
 /// Compare an image to a subimage of a larger image.
 /// Returns 1 (true) if img2 matches subimage of img1 at pos (x, y).
@@ -468,6 +568,12 @@ int ImageMatchSubImage(Image img1, int x, int y, Image img2) { ///
   assert (img2 != NULL);
   assert (ImageValidPos(img1, x, y));
   // Insert your code here!
+   for (int i = 0; i < img2->width; i++) {
+      for (int j = 0; j < img2->height; j++) {
+        if(ImageGetPixel(img1,x+i,y+j)!=ImageGetPixel(img2,i,j)){return 0;}
+    }
+  }
+  return 1;
 }
 
 /// Locate a subimage inside another image.
@@ -478,8 +584,18 @@ int ImageLocateSubImage(Image img1, int* px, int* py, Image img2) { ///
   assert (img1 != NULL);
   assert (img2 != NULL);
   // Insert your code here!
+  for (int i = 0; i < img2->width; i++) {
+    for (int j = 0; j < img2->height; j++) {
+      PIXCOMPARE++;
+      if(ImageMatchSubImage(img1, i, j, img2)){
+        *px = i;
+        *py = j;
+        return 1;
+      }
+    }
+  }
+  return 0;
 }
-
 
 /// Filtering
 
@@ -488,6 +604,29 @@ int ImageLocateSubImage(Image img1, int* px, int* py, Image img2) { ///
 /// [x-dx, x+dx]x[y-dy, y+dy].
 /// The image is changed in-place.
 void ImageBlur(Image img, int dx, int dy) { ///
-  // Insert your code here!
+  // Insert your code here<!
+  uint8 *blur = (uint8 *)malloc(img->width*img->height*sizeof(uint8));
+  for (int x = 0; x < img->width; x++) {
+    for (int y = 0; y < img->height ; y++) {
+      double sum =0;
+      int count = 0;
+      for (int i = -dx; i <= dx ; i++){
+        for (int j = -dy; j <= dy; j++){
+          int cordX = x+i;
+          int cordY = y+j;
+          PIXCOMPARE++;
+          if(0<=cordX && cordX<img->width && 0<=cordY && cordY<img->height){
+          sum += ImageGetPixel(img,cordX, cordY);
+          count++;}
+          }
+        }
+        blur[y*img->width+x] = ((0.5)+(sum)/(count));
+        //ImageSetPixel(img,x,y,((0.5)+(sum)/(count)));
+      }
+    }
+    for (int y = 0; y < img->height; y++) {
+      for (int x = 0; x < img->width; x++) {
+        ImageSetPixel(img,x,y,blur[y*img->width+x]);
+     }
+   }   
 }
-
