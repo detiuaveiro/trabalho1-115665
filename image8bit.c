@@ -148,14 +148,16 @@ void ImageInit(void) { ///
   InstrName[0] = "pixmem"; // InstrCount[0] will count pixel array acesses
   // Name other counters here...
   InstrName[1] = "compare";
-  InstrName[2] = "give";
+  InstrName[2] = "iteration";
+  InstrName[3] = "atribution";
 }
 
 // Macros to simplify accessing instrumentation counters:
 #define PIXMEM InstrCount[0]
 // Add more macros here...
 #define PIXCOMPARE InstrCount[1]
-#define PIXCOMPARE InstrCount[2]
+#define PIXITERR InstrCount[2]
+#define PIXATTR InstrCount[3]
 
 // TIP: Search for PIXMEM or InstrCount to see where it is incremented!
 
@@ -585,9 +587,12 @@ int ImageLocateSubImage(Image img1, int* px, int* py, Image img2) { ///
   assert (img2 != NULL);
   // Insert your code here!
   for (int i = 0; i < img2->width; i++) {
+    PIXITERR ++;
     for (int j = 0; j < img2->height; j++) {
+      PIXITERR ++;
       PIXCOMPARE++;
       if(ImageMatchSubImage(img1, i, j, img2)){
+        PIXATTR +=2;
         *px = i;
         *py = j;
         return 1;
@@ -605,28 +610,38 @@ int ImageLocateSubImage(Image img1, int* px, int* py, Image img2) { ///
 /// The image is changed in-place.
 void ImageBlur(Image img, int dx, int dy) { ///
   // Insert your code here<!
+  PIXATTR ++;
   uint8 *blur = (uint8 *)malloc(img->width*img->height*sizeof(uint8));
   for (int x = 0; x < img->width; x++) {
+    PIXITERR ++;
     for (int y = 0; y < img->height ; y++) {
+      PIXITERR ++;
+      PIXATTR +=2;
       double sum =0;
       int count = 0;
       for (int i = -dx; i <= dx ; i++){
+        PIXITERR ++ ;
         for (int j = -dy; j <= dy; j++){
+          PIXITERR++;
+          PIXATTR +=2;
           int cordX = x+i;
           int cordY = y+j;
-          PIXCOMPARE++;
+          PIXCOMPARE+=4;
           if(0<=cordX && cordX<img->width && 0<=cordY && cordY<img->height){
-          sum += ImageGetPixel(img,cordX, cordY);
-          count++;}
+            PIXATTR +=2;
+            sum += ImageGetPixel(img,cordX, cordY);
+            count++;}
           }
         }
+        PIXATTR ++;
         blur[y*img->width+x] = ((0.5)+(sum)/(count));
-        //ImageSetPixel(img,x,y,((0.5)+(sum)/(count)));
       }
     }
     for (int y = 0; y < img->height; y++) {
+      PIXITERR ++;
       for (int x = 0; x < img->width; x++) {
+        PIXITERR ++;
         ImageSetPixel(img,x,y,blur[y*img->width+x]);
-     }
-   }   
-}
+        }
+    }
+  }
